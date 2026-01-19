@@ -2,6 +2,17 @@
 
 CLI tools for managing UniFi UDM Pro firewall policies and groups via the REST API.
 
+## Attributions and Third-Party Components
+
+**Important:** This project uses and references several third-party components that are not owned or created by the author:
+
+- **UniFi** - UniFi, UDM Pro, and all related trademarks are property of [Ubiquiti Inc.](https://www.ui.com/). This project is not affiliated with, endorsed by, or associated with Ubiquiti Inc.
+- **Python** - Python programming language is developed by the [Python Software Foundation](https://www.python.org/psf/). This project uses Python but does not claim ownership of the language.
+- **unifi-network-mcp submodule** - The `unifi-network-mcp` submodule included in this repository is **not my code**. It is included as a reference implementation and is the work of [sirkirby](https://github.com/sirkirby/unifi-network-mcp). All credit for the submodule code belongs to its original author. This project uses it only as a reference for API endpoints and patterns.
+- **Third-party Python packages** - This project uses various open-source Python packages (see `requirements.txt`). Each package maintains its own license and copyright.
+
+This repository contains only the wrapper scripts, client library, and tooling created by the author. All third-party components retain their original licenses and copyrights.
+
 ## Overview
 
 This project provides standalone Python scripts to manage firewall policies, groups, port forwarding, static routes, and DNS records on a UniFi Dream Machine Pro. Each script performs a single operation (list, view, create, update, delete, enable, disable) following a modular design.
@@ -82,7 +93,3 @@ This project provides standalone Python scripts to manage firewall policies, gro
 The `unifi-network-mcp` submodule is included **only as a reference** for discovering API endpoints, patterns, and implementation examples.
 
 **Big thanks to [unifi-network-mcp](https://github.com/sirkirby/unifi-network-mcp)** for saving me countless cycles in understanding the UniFi API. If you find this project useful, please consider [starring their repository](https://github.com/sirkirby/unifi-network-mcp) to show your appreciation.
-
-## License
-
-MIT
