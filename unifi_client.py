@@ -1105,230 +1105,280 @@ class UniFiFirewallClient:
         endpoint = f"/proxy/network/api/s/{self.site}/rest/routing/{route_id}"
         return self._delete_endpoint(endpoint)
 
-    def list_dns_records(self) -> list[Dict[str, Any]]:
+    # -------------------------------------------------------------------------
+    # DNS Records (gateway-level static DNS records, Policy Table → DNS Records)
+    # -------------------------------------------------------------------------
+
+    def list_static_dns_records(self) -> list[Dict[str, Any]]:
         """
-        List all clients with DNS records (local DNS hostnames).
+        List all static DNS records.
+
+        These are the records in Network → Settings → Policy Table → DNS Records
+        (e.g. scrypted.spaceterran.com → 192.168.52.77).
 
         Returns:
-            List of client dictionaries that have DNS records
+            List of static DNS record dictionaries
         """
-        # Get all clients - we'll need to use a different endpoint
-        # For now, return empty list as we need client list endpoint
-        # This will be implemented when we have client listing
-        endpoint = f"/proxy/network/api/s/{self.site}/rest/user"
+        endpoint = f"/proxy/network/v2/api/site/{self.site}/static-dns"
         data = self._get_endpoint(endpoint)
 
         if data is None:
             return []
 
         if isinstance(data, dict) and "data" in data:
-            clients = data["data"]
+            return data["data"]
         elif isinstance(data, list):
-            clients = data
+            return data
         else:
             return []
 
-        # Filter to only clients with DNS records
-        return [
-            c
-            for c in clients
-            if c.get("local_dns_record_enabled", False) and c.get("local_dns_record")
-        ]
-
-    def get_dns_record_by_mac(self, mac_address: str) -> Optional[Dict[str, Any]]:
+    def get_static_dns_record_by_id(self, record_id: str) -> Optional[Dict[str, Any]]:
         """
-        Get DNS record for a client by MAC address.
+        Get a specific static DNS record by ID.
 
         Args:
-            mac_address: Client MAC address
+            record_id: DNS record ID
 
         Returns:
-            Client dictionary with DNS record, or None if not found
+            DNS record dictionary or None if not found
         """
-        endpoint = f"/proxy/network/api/s/{self.site}/rest/user"
-        data = self._get_endpoint(endpoint)
+        records = self.list_static_dns_records()
+        return next((r for r in records if r.get("_id") == record_id), None)
 
-        if data is None:
+    def get_static_dns_record_by_domain(self, domain: str) -> Optional[Dict[str, Any]]:
+        """
+        Get a static DNS record by exact or partial domain match (case-insensitive).
+
+        Args:
+            domain: Domain name to search for
+
+        Returns:
+            DNS record dictionary or None if not found
+        """
+        domain = (domain or "").strip().lower()
+        if not domain:
             return None
-
-        if isinstance(data, dict) and "data" in data:
-            clients = data["data"]
-        elif isinstance(data, list):
-            clients = data
-        else:
-            return None
-
-        client = next(
-            (c for c in clients if c.get("mac", "").lower() == mac_address.lower()),
-            None,
-        )
-
-        if client and client.get("local_dns_record_enabled") and client.get(
-            "local_dns_record"
-        ):
-            return client
-
+        records = self.list_static_dns_records()
+        for rec in records:
+            d = (rec.get("key") or "").lower()
+            if d == domain or domain in d:
+                return rec
         return None
 
-    def create_dns_record(
-        self, mac_address: str, hostname: str, ip_address: Optional[str] = None
-    ) -> bool:
+    def create_static_dns_record(self, record_data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         """
-        Create a DNS record (local DNS hostname) for a client.
+        Create a new static DNS record.
 
         Args:
-            mac_address: Client MAC address
-            hostname: DNS hostname (e.g., "mydevice.local")
-            ip_address: Optional fixed IP address (DHCP reservation)
+            record_data: Dictionary with DNS record configuration:
+                        - key (str): Domain name (e.g. "scrypted.spaceterran.com")
+                        - value (str): IP address or hostname
+                        - record_type (str, optional): "A", "AAAA", "CNAME", "MX", "SRV", "TXT"
+                        - ttl (int, optional): TTL in seconds (0 = Auto)
+                        - enabled (bool, optional): Whether the record is enabled
+                        - priority (int, optional): Priority for MX/SRV records
+                        - weight (int, optional): Weight for SRV records
+                        - port (int, optional): Port for SRV records
 
         Returns:
-            True if successful, False otherwise
+            Created record dictionary, or None on error
         """
-        # Get client first to get their ID
-        endpoint = f"/proxy/network/api/s/{self.site}/rest/user"
-        data = self._get_endpoint(endpoint)
+        # Set defaults
+        if "record_type" not in record_data:
+            record_data["record_type"] = "A"
+        if "ttl" not in record_data:
+            record_data["ttl"] = 0
+        if "enabled" not in record_data:
+            record_data["enabled"] = True
+        if "priority" not in record_data:
+            record_data["priority"] = 0
+        if "weight" not in record_data:
+            record_data["weight"] = 0
+        if "port" not in record_data:
+            record_data["port"] = 0
 
-        if data is None:
-            return False
+        endpoint = f"/proxy/network/v2/api/site/{self.site}/static-dns"
+        result = self._post_endpoint(endpoint, record_data)
 
-        if isinstance(data, dict) and "data" in data:
-            clients = data["data"]
-        elif isinstance(data, list):
-            clients = data
-        else:
-            return False
+        if result and isinstance(result, dict) and "data" in result:
+            data = result["data"]
+            if isinstance(data, list) and len(data) > 0:
+                return data[0]
+        elif result and isinstance(result, dict) and result.get("_id"):
+            return result
 
-        client = next(
-            (c for c in clients if c.get("mac", "").lower() == mac_address.lower()),
-            None,
-        )
+        return result
 
-        if not client:
-            return False
-
-        client_id = client.get("_id")
-        if not client_id:
-            return False
-
-        # Build update payload
-        update_data = {
-            "local_dns_record_enabled": True,
-            "local_dns_record": hostname,
-        }
-
-        if ip_address:
-            update_data["use_fixedip"] = True
-            update_data["fixed_ip"] = ip_address
-
-        endpoint = f"/proxy/network/api/s/{self.site}/rest/user/{client_id}"
-        result = self._put_endpoint(endpoint, update_data)
-        return result is not None
-
-    def update_dns_record(
-        self, mac_address: str, hostname: Optional[str] = None, enabled: Optional[bool] = None, verify: bool = True
-    ) -> bool:
+    def update_static_dns_record(self, record_id: str, update_data: Dict[str, Any], verify: bool = True) -> bool:
         """
-        Update a DNS record for a client.
+        Update a static DNS record.
 
         Args:
-            mac_address: Client MAC address
-            hostname: New hostname (optional)
-            enabled: Enable/disable DNS record (optional)
+            record_id: Record ID to update
+            update_data: Dictionary with fields to update (merged into full record)
             verify: Whether to verify the update by re-fetching the record (default: True)
 
         Returns:
             True if successful and verified (if verify=True), False otherwise
         """
-        # Get client first
-        endpoint = f"/proxy/network/api/s/{self.site}/rest/user"
-        data = self._get_endpoint(endpoint)
-
-        if data is None:
+        # Get current record to merge updates
+        record = self.get_static_dns_record_by_id(record_id)
+        if not record:
             return False
 
-        if isinstance(data, dict) and "data" in data:
-            clients = data["data"]
-        elif isinstance(data, list):
-            clients = data
-        else:
-            return False
+        # Make a deep copy to avoid modifying the original record object
+        record_copy = copy.deepcopy(record)
+        
+        # Merge updates into the copy
+        record_copy.update(update_data)
 
-        client = next(
-            (c for c in clients if c.get("mac", "").lower() == mac_address.lower()),
-            None,
-        )
-
-        if not client:
-            return False
-
-        client_id = client.get("_id")
-        if not client_id:
-            return False
-
-        # Build update payload
-        update_data = {}
-        if hostname is not None:
-            update_data["local_dns_record"] = hostname
-            update_data["local_dns_record_enabled"] = True
-        if enabled is not None:
-            update_data["local_dns_record_enabled"] = enabled
-            if not enabled:
-                update_data["local_dns_record"] = ""
-
-        if not update_data:
-            return False
-
-        endpoint = f"/proxy/network/api/s/{self.site}/rest/user/{client_id}"
-        result = self._put_endpoint(endpoint, update_data)
+        endpoint = f"/proxy/network/v2/api/site/{self.site}/static-dns/{record_id}"
+        result = self._put_endpoint(endpoint, record_copy)
         
         if result is None:
             return False
         
-        # Verify the update by re-fetching the DNS record
+        # Verify the update by re-fetching the record
         if verify:
             time.sleep(0.5)
-            updated_client = self.get_dns_record_by_mac(mac_address)
-            if not updated_client:
-                # If enabled=False, the record might not appear in filtered list
-                # Re-fetch from full client list
-                clients = self._get_endpoint(f"/proxy/network/api/s/{self.site}/rest/user")
-                if clients:
-                    if isinstance(clients, dict) and "data" in clients:
-                        clients = clients["data"]
-                    elif not isinstance(clients, list):
-                        clients = []
-                    updated_client = next(
-                        (c for c in clients if c.get("mac", "").lower() == mac_address.lower()),
-                        None,
-                    )
-            
-            if not updated_client:
-                # If we disabled the record, it's expected to not appear
-                if enabled is False:
-                    return True
+            updated_record = self.get_static_dns_record_by_id(record_id)
+            if not updated_record:
                 return False
-            
-            # Verify the updated fields
-            if hostname is not None:
-                if updated_client.get("local_dns_record") != hostname:
-                    return False
-            if enabled is not None:
-                if updated_client.get("local_dns_record_enabled") != enabled:
+            # Verify that the updated fields match what we sent
+            for key, expected_value in update_data.items():
+                actual_value = updated_record.get(key)
+                if actual_value != expected_value:
+                    # For non-dict values, handle empty string vs None
+                    if expected_value == "" and actual_value is None:
+                        continue
+                    if actual_value == "" and expected_value is None:
+                        continue
                     return False
         
         return True
 
-    def delete_dns_record(self, mac_address: str) -> bool:
+    def delete_static_dns_record(self, record_id: str) -> bool:
         """
-        Delete a DNS record (disable local DNS) for a client.
+        Delete a static DNS record by ID.
 
         Args:
-            mac_address: Client MAC address
+            record_id: Record ID to delete
 
         Returns:
             True if successful, False otherwise
         """
-        return self.update_dns_record(mac_address, enabled=False)
+        endpoint = f"/proxy/network/v2/api/site/{self.site}/static-dns/{record_id}"
+        return self._delete_endpoint(endpoint)
+
+    def toggle_static_dns_record(self, record_id: str) -> bool:
+        """
+        Toggle a static DNS record enabled/disabled state.
+
+        Args:
+            record_id: Record ID to toggle
+
+        Returns:
+            True if successful, False otherwise
+        """
+        record = self.get_static_dns_record_by_id(record_id)
+        if not record:
+            return False
+
+        new_state = not record.get("enabled", False)
+        return self.update_static_dns_record(record_id, {"enabled": new_state})
+
+    # Aliases for backward compatibility with existing scripts
+    def list_policy_dns_records(self, domain_filter: Optional[str] = None) -> list[Dict[str, Any]]:
+        """List DNS records with optional domain filter. Returns normalized format for backward compatibility."""
+        records = self.list_static_dns_records()
+        result = []
+        for r in records:
+            domain = r.get("key", "")
+            if domain_filter and domain_filter.lower() not in domain.lower():
+                continue
+            result.append({
+                "_id": r.get("_id"),
+                "domain": domain,
+                "type": r.get("record_type", "A"),
+                "ip_or_hostname": r.get("value", ""),
+                "ttl": r.get("ttl") if r.get("ttl") else None,
+                "enabled": r.get("enabled", True),
+                "raw": r,
+            })
+        return result
+
+    def get_policy_dns_record_by_id(self, record_id: str) -> Optional[Dict[str, Any]]:
+        """Get DNS record by ID. Returns normalized format for backward compatibility."""
+        rec = self.get_static_dns_record_by_id(record_id)
+        if rec:
+            return {
+                "_id": rec.get("_id"),
+                "domain": rec.get("key", ""),
+                "type": rec.get("record_type", "A"),
+                "ip_or_hostname": rec.get("value", ""),
+                "ttl": rec.get("ttl") if rec.get("ttl") else None,
+                "enabled": rec.get("enabled", True),
+                "raw": rec,
+            }
+        return None
+
+    def get_policy_dns_record_by_domain(self, domain: str) -> Optional[Dict[str, Any]]:
+        """Get DNS record by domain. Returns normalized format for backward compatibility."""
+        rec = self.get_static_dns_record_by_domain(domain)
+        if rec:
+            return {
+                "_id": rec.get("_id"),
+                "domain": rec.get("key", ""),
+                "type": rec.get("record_type", "A"),
+                "ip_or_hostname": rec.get("value", ""),
+                "ttl": rec.get("ttl") if rec.get("ttl") else None,
+                "enabled": rec.get("enabled", True),
+                "raw": rec,
+            }
+        return None
+
+    def create_policy_dns_record(
+        self,
+        domain: str,
+        ip_or_hostname: str,
+        record_type: str = "A",
+        ttl: Optional[int] = None,
+        enabled: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        """Create DNS record. Backward compatible wrapper."""
+        return self.create_static_dns_record({
+            "key": domain,
+            "value": ip_or_hostname,
+            "record_type": record_type,
+            "ttl": ttl if ttl is not None else 0,
+            "enabled": enabled,
+        })
+
+    def update_policy_dns_record(
+        self,
+        record_id: str,
+        domain: Optional[str] = None,
+        ip_or_hostname: Optional[str] = None,
+        record_type: Optional[str] = None,
+        enabled: Optional[bool] = None,
+    ) -> bool:
+        """Update DNS record. Backward compatible wrapper."""
+        update_data = {}
+        if domain is not None:
+            update_data["key"] = domain
+        if ip_or_hostname is not None:
+            update_data["value"] = ip_or_hostname
+        if record_type is not None:
+            update_data["record_type"] = record_type
+        if enabled is not None:
+            update_data["enabled"] = enabled
+        if not update_data:
+            return True
+        return self.update_static_dns_record(record_id, update_data)
+
+    def delete_policy_dns_record(self, record_id: str) -> bool:
+        """Delete DNS record. Backward compatible wrapper."""
+        return self.delete_static_dns_record(record_id)
 
     def get_network_configs(self) -> list[Dict[str, Any]]:
         """

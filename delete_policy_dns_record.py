@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Delete DNS Record
+Delete Static DNS Record
 
-Delete a DNS record (disable local DNS) for a client device.
+Delete a static DNS record by ID.
 """
 
 import sys
@@ -14,13 +14,13 @@ load_dotenv()
 
 
 def main():
-    """Delete a DNS record."""
+    """Delete a static DNS record."""
     if len(sys.argv) < 2:
-        print("Usage: python delete_dns_record.py <mac_address>")
-        print("\nTo get MAC addresses, run: python list_dns_records.py")
+        print("Usage: python delete_policy_dns_record.py <record_id>")
+        print("\nTo get record IDs, run: python list_policy_dns_records.py")
         sys.exit(1)
 
-    mac_address = sys.argv[1]
+    record_id = sys.argv[1]
 
     # Check for --force flag
     force = "--force" in sys.argv
@@ -36,19 +36,21 @@ def main():
     if not client.login():
         sys.exit(1)
 
-    # Get current DNS record to show what we're deleting
-    record = client.get_dns_record_by_mac(mac_address)
+    # Get current record to show what we're deleting
+    record = client.get_static_dns_record_by_id(record_id)
     if not record:
-        print(f"✗ DNS record not found for MAC: {mac_address}")
+        print(f"✗ Record not found: {record_id}")
         sys.exit(1)
 
-    name = record.get("name", record.get("hostname", "Unnamed"))
-    hostname = record.get("local_dns_record", "N/A")
+    domain = record.get("key", "Unnamed")
+    record_type = record.get("record_type", "A")
+    value = record.get("value", "N/A")
 
     print("\nDNS record to delete:")
-    print(f"  Name: {name}")
-    print(f"  MAC: {mac_address}")
-    print(f"  Hostname: {hostname}")
+    print(f"  Domain: {domain}")
+    print(f"  ID: {record_id}")
+    print(f"  Type: {record_type}")
+    print(f"  Value: {value}")
 
     # Confirm deletion unless --force is used
     if not force:
@@ -57,15 +59,15 @@ def main():
             print("Aborted.")
             sys.exit(0)
 
-    print(f"\nDeleting DNS record for {mac_address}...")
+    print(f"\nDeleting DNS record {record_id}...")
 
-    # Delete the DNS record
-    success = client.delete_dns_record(mac_address)
+    # Delete the record
+    success = client.delete_static_dns_record(record_id)
 
     if success:
-        print(f"✓ Successfully deleted DNS record: {hostname}")
+        print(f"✓ Successfully deleted DNS record: {domain}")
     else:
-        print(f"✗ Failed to delete DNS record: {mac_address}")
+        print(f"✗ Failed to delete DNS record: {record_id}")
         sys.exit(1)
 
 
