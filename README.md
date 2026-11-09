@@ -44,7 +44,7 @@ This project provides standalone Python scripts to manage firewall policies, gro
 - `list_policies.py` - List all policies with IDs, names, and status
 - `view_policy.py` - View full details of a specific policy
 - `search_policies.py` - Search policies by name, port, IP, zone, protocol, or action
-- `create_policy.py` - Create a new policy from JSON or preset
+- `create_policy.py` - Create a new policy from a JSON file
 - `update_policy.py` - Update a policy with JSON data
 - `enable_policy.py` / `disable_policy.py` - Toggle policy status
 - `delete_policy.py` - Delete a policy
